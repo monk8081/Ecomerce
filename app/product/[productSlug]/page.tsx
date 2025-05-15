@@ -134,5 +134,4 @@ const SingleProductPage = async ({ params }: SingleProductPageProps) => {
     </div>
   );
 };
-
 export default SingleProductPage;
