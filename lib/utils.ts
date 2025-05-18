@@ -3,31 +3,31 @@ export const categoryMenuList = [
     id: 1,
     title: "T-Shirt",
     src: "/t-shirt.png",
-    href: "/shop/smart-phones"
+    href: "/shop/T-Shirt"
   },
   {
     id: 2,
     title: "Shirt",
     src: "/shirt.png",
-    href: "/shop/tablets"
+    href: "/shop/Shirt"
   },
   {
     id: 3,
     title: "Topwear",
     src: "/shirt (1).png",
-    href: "/shop/mouses"
+    href: "/shop/Topwear"
   },
   {
     id: 4,
     title: "Dresses",
     src: "/dress.png",
-    href: "/shop/cameras"
+    href: "/shop/Dresses"
   },
   {
     id: 5,
     title: "Jeans",
     src: "/jeans.png",
-    href: "/shop/watches"
+    href: "/shop/Jeans"
   },
   
 ];

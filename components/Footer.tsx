@@ -15,7 +15,7 @@ import Link from "next/link";
 
 const Footer = () => {
   return (
-    <footer className="bg-[#dedede]" aria-labelledby="footer-heading">
+    <footer className="bg-black" aria-labelledby="footer-heading">
       <div>
         <h2 id="footer-heading" className="sr-only">
           Footer
@@ -27,7 +27,7 @@ const Footer = () => {
               alt="brand logo"
               width={250}
               height={250}
-              className="h-auto w-auto"
+              className="h-auto bg-white w-auto"
             />
             <div className="mt-16 grid grid-cols-2 gap-8 xl:col-span-2 xl:mt-0">
               <div className="md:grid md:grid-cols-2 md:gap-8">
@@ -40,7 +40,7 @@ const Footer = () => {
                       <li key={item.name}>
                         <Link
                           href={item.href}
-                          className="text-sm leading-6 text-black hover:text-gray-700"
+                          className="text-sm leading-6 text-white hover:text-gray-700"
                         >
                           {item.name}
                         </Link>
@@ -57,7 +57,7 @@ const Footer = () => {
                       <li key={item.name}>
                         <a
                           href={item.href}
-                          className="text-sm leading-6 text-black hover:text-gray-700"
+                          className="text-sm leading-6 text-white hover:text-gray-700"
                         >
                           {item.name}
                         </a>
@@ -76,7 +76,7 @@ const Footer = () => {
                       <li key={item.name}>
                         <a
                           href={item.href}
-                          className="text-sm leading-6 text-black hover:text-gray-700"
+                          className="text-sm leading-6 text-white hover:text-gray-700"
                         >
                           {item.name}
                         </a>
@@ -93,7 +93,7 @@ const Footer = () => {
                       <li key={item.name}>
                         <a
                           href={item.href}
-                          className="text-sm leading-6 text-black hover:text-gray-700"
+                          className="text-sm leading-6 text-white hover:text-gray-700"
                         >
                           {item.name}
                         </a>

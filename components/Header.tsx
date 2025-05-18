@@ -75,9 +75,9 @@ const Header = () => {
     <header className="bg-white">
       <HeaderTop />
       {pathname.startsWith("/admin") === false && (
-        <div className="h-32 bg-[#dedede] flex items-center justify-between px-16 max-[1320px]:px-16 max-md:px-6 max-lg:flex-col max-lg:gap-y-7 max-lg:justify-center max-lg:h-60 max-w-screen-2xl mx-auto">
+        <div className="h-16 bg-white-100 flex items-center justify-between px-16 max-[1320px]:px-16 max-md:px-6 max-lg:flex-col max-lg:gap-y-7 max-lg:justify-center max-lg:h-60 max-w-screen-2xl mx-auto">
           <Link href="/">
-            <img src="/logo.png" width={300} height={150} alt="Inspring  Brand" className="relative right-5 max-[1023px]:w-56" />
+            <img src="/logo.png" width={300} height={150} alt="Inspring Brand" className="relative right-5 max-[1023px]:w-56" style={{ maxWidth: '100%', height: '60px', objectFit: 'contain', }} />
           </Link>
           <SearchInput />
           <div className="flex gap-x-10">
