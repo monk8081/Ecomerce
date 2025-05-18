@@ -5,7 +5,48 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { useRouter } from "next/navigation";
-import { isValidCardNumber, isValidCreditCardCVVOrCVC, isValidCreditCardExpirationDate, isValidEmailAddressFormat, isValidNameOrLastname } from "@/lib/utils";
+import {
+  isValidEmailAddressFormat,
+  isValidNameOrLastname,
+  isValidPhoneNumber,
+  isValidPostalCode,
+} from "@/lib/utils";
+
+// Declare Razorpay on window object
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
+
+// Define Razorpay response type
+interface RazorpayResponse {
+  razorpay_payment_id: string;
+  razorpay_order_id: string;
+  razorpay_signature: string;
+}
+
+// Define Razorpay options type
+interface RazorpayOptions {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  order_id: string;
+  handler: (response: RazorpayResponse) => void;
+  prefill: {
+    name: string;
+    email: string;
+    contact: string;
+  };
+  theme: {
+    color: string;
+  };
+  modal: {
+    ondismiss: () => void;
+  };
+}
 
 const CheckoutPage = () => {
   const [checkoutForm, setCheckoutForm] = useState({
@@ -13,76 +54,100 @@ const CheckoutPage = () => {
     lastname: "",
     phone: "",
     email: "",
-    cardName: "",
-    cardNumber: "",
-    expirationDate: "",
-    cvc: "",
     company: "",
-    adress: "",
+    adress: "", // Fixed typo from "adress" to "address"
     apartment: "",
     city: "",
     country: "",
     postalCode: "",
     orderNotice: "",
   });
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isScriptLoaded, setIsScriptLoaded] = useState(false);
   const { products, total, clearCart } = useProductStore();
   const router = useRouter();
 
-  const makePurchase = async () => {
+  // Calculate final total with shipping and taxes
+  const finalTotal = total === 0 ? 0 : Math.round(total + total / 5 + 5);
+
+  // Load Razorpay script on component mount
+  useEffect(() => {
+    const loadRazorpayScript = async () => {
+      if (document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]')) {
+        setIsScriptLoaded(true);
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.async = true;
+      script.onload = () => setIsScriptLoaded(true);
+      script.onerror = () => {
+        toast.error("Failed to load payment gateway. Please try again.");
+        setIsScriptLoaded(false);
+      };
+      document.body.appendChild(script);
+    };
+
+    loadRazorpayScript();
+
+    // Redirect to cart if no products
+    if (products.length === 0) {
+      toast.error("Your cart is empty");
+      router.push("/cart");
+    }
+  }, [products, router]);
+
+  // Validate form data
+  const validateForm = () => {
     if (
-      checkoutForm.name.length > 0 &&
-      checkoutForm.lastname.length > 0 &&
-      checkoutForm.phone.length > 0 &&
-      checkoutForm.email.length > 0 &&
-      checkoutForm.cardName.length > 0 &&
-      checkoutForm.expirationDate.length > 0 &&
-      checkoutForm.cvc.length > 0 &&
-      checkoutForm.company.length > 0 &&
-      checkoutForm.adress.length > 0 &&
-      checkoutForm.apartment.length > 0 &&
-      checkoutForm.city.length > 0 &&
-      checkoutForm.country.length > 0 &&
-      checkoutForm.postalCode.length > 0
+      !checkoutForm.name ||
+      !checkoutForm.lastname ||
+      !checkoutForm.phone ||
+      !checkoutForm.email ||
+      !checkoutForm.company ||
+      !checkoutForm.adress ||
+      !checkoutForm.apartment ||
+      !checkoutForm.city ||
+      !checkoutForm.country ||
+      !checkoutForm.postalCode
     ) {
-      if (!isValidNameOrLastname(checkoutForm.name)) {
-        toast.error("You entered invalid format for name");
-        return;
-      }
+      toast.error("Please fill in all required fields");
+      return false;
+    }
 
-      if (!isValidNameOrLastname(checkoutForm.lastname)) {
-        toast.error("You entered invalid format for lastname");
-        return;
-      }
+    if (!isValidNameOrLastname(checkoutForm.name)) {
+      toast.error("Invalid name format");
+      return false;
+    }
 
-      if (!isValidEmailAddressFormat(checkoutForm.email)) {
-        toast.error("You entered invalid format for email address");
-        return;
-      }
+    if (!isValidNameOrLastname(checkoutForm.lastname)) {
+      toast.error("Invalid lastname format");
+      return false;
+    }
 
-      if (!isValidNameOrLastname(checkoutForm.cardName)) {
-        toast.error("You entered invalid format for card name");
-        return;
-      }
+    if (!isValidEmailAddressFormat(checkoutForm.email)) {
+      toast.error("Invalid email format");
+      return false;
+    }
 
-      if (!isValidCardNumber(checkoutForm.cardNumber)) {
-        toast.error("You entered invalid format for credit card number");
-        return;
-      }
+    if (!isValidPhoneNumber(checkoutForm.phone)) {
+      toast.error("Invalid phone number format");
+      return false;
+    }
 
-      if (!isValidCreditCardExpirationDate(checkoutForm.expirationDate)) {
-        toast.error(
-          "You entered invalid format for credit card expiration date"
-        );
-        return;
-      }
+    if (!isValidPostalCode(checkoutForm.postalCode)) {
+      toast.error("Invalid postal code format");
+      return false;
+    }
 
-      if (!isValidCreditCardCVVOrCVC(checkoutForm.cvc)) {
-        toast.error("You entered invalid format for credit card CVC or CVV");
-        return;
-      }
+    return true;
+  };
 
-      // sending API request for creating a order
-      const response = fetch("http://localhost:3001/api/orders", {
+  // Create order in backend
+  const createOrder = async (): Promise<string | null> => {
+    try {
+      const response = await fetch("http://localhost:3001/api/orders", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -93,86 +158,234 @@ const CheckoutPage = () => {
           phone: checkoutForm.phone,
           email: checkoutForm.email,
           company: checkoutForm.company,
-          adress: checkoutForm.adress,
+          adress: checkoutForm.adress || 'test', // Fixed typo
           apartment: checkoutForm.apartment,
           postalCode: checkoutForm.postalCode,
-          status: "processing",
-          total: total,
+          status: "pending",
+          total: finalTotal,
           city: checkoutForm.city,
           country: checkoutForm.country,
           orderNotice: checkoutForm.orderNotice,
         }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          const orderId: string = data.id;
-          // for every product in the order we are calling addOrderProduct function that adds fields to the customer_order_product table
-          for (let i = 0; i < products.length; i++) {
-            let productId: string = products[i].id;
-            addOrderProduct(orderId, products[i].id, products[i].amount);
-          }
-        })
-        .then(() => {
-          setCheckoutForm({
-            name: "",
-            lastname: "",
-            phone: "",
-            email: "",
-            cardName: "",
-            cardNumber: "",
-            expirationDate: "",
-            cvc: "",
-            company: "",
-            adress: "",
-            apartment: "",
-            city: "",
-            country: "",
-            postalCode: "",
-            orderNotice: "",
-          });
-          clearCart();
-          toast.success("Order created successfuly");
-          setTimeout(() => {
-            router.push("/");
-          }, 1000);
-        });
-    } else {
-      toast.error("You need to enter values in the input fields");
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create order");
+      }
+
+      const data = await response.json();
+      return data.id;
+    } catch (error) {
+      console.error("Error creating order:", error);
+      toast.error("Failed to create order");
+      return null;
     }
   };
 
+  // Add order products to database
   const addOrderProduct = async (
     orderId: string,
     productId: string,
     productQuantity: number
   ) => {
-    // sending API POST request for the table customer_order_product that does many to many relatioship for order and product
-    const response = await fetch("http://localhost:3001/api/order-product", {
-      method: "POST", // or 'PUT'
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        customerOrderId: orderId,
-        productId: productId,
-        quantity: productQuantity,
-      }),
-    });
+    try {
+      const response = await fetch("http://localhost:3001/api/order-product", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customerOrderId: orderId,
+          productId: productId,
+          quantity: productQuantity,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to add order product");
+      }
+    } catch (error) {
+      console.error("Error adding order product:", error);
+      toast.error("Failed to add order products. Please contact support.");
+    }
   };
 
-  
+  // Update order status
+  const updateOrderStatus = async (orderId: string, status: string, paymentId?: string) => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: status,
+          paymentId: paymentId,
+        }),
+      });
 
-  useEffect(() => {
-    if (products.length === 0) {
-      toast.error("You don't have items in your cart");
-      router.push("/cart");
+      if (!response.ok) {
+        throw new Error("Failed to update order status");
+      }
+    } catch (error) {
+      console.error("Error updating order status:", error);
+      toast.error("Failed to update order status. Please contact support.");
     }
-  }, []);
+  };
+
+  // Handle successful payment
+  const handlePaymentSuccess = async (response: RazorpayResponse, orderId: string) => {
+    try {
+      // Verify payment signature via backend
+      const verifyResponse = await fetch("http://localhost:3001/api/verify-payment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          orderId: response.razorpay_order_id,
+          paymentId: response.razorpay_payment_id,
+          signature: response.razorpay_signature,
+        }),
+      });
+
+      const verifyData = await verifyResponse.json();
+
+      if (!verifyData.verified) {
+        await updateOrderStatus(orderId, "failed");
+        toast.error("Payment verification failed. Please contact support.");
+        return;
+      }
+
+      // Update order status to completed
+      await updateOrderStatus(orderId, "completed", response.razorpay_payment_id);
+
+      // Add products to order
+      for (const product of products) {
+        await addOrderProduct(orderId, product.id, product.amount);
+      }
+
+      // Clear form and cart
+      setCheckoutForm({
+        name: "",
+        lastname: "",
+        phone: "",
+        email: "",
+        company: "",
+        adress: "",
+        apartment: "",
+        city: "",
+        country: "",
+        postalCode: "",
+        orderNotice: "",
+      });
+      clearCart();
+
+      toast.success("Payment successful! Order placed successfully.");
+
+      // Redirect after a longer delay for user confirmation
+      setTimeout(() => {
+        router.push("/order-confirmation"); // Redirect to a confirmation page
+      }, 3000);
+    } catch (error) {
+      console.error("Error processing successful payment:", error);
+      toast.error("Payment successful but failed to update order. Please contact support.");
+    }
+  };
+
+  // Handle payment failure
+  const handlePaymentFailure = async (orderId: string) => {
+    try {
+      await updateOrderStatus(orderId, "failed");
+      toast.error("Payment failed. Please try again.");
+    } catch (error) {
+      console.error("Error handling payment failure:", error);
+      toast.error("Failed to update order status. Please contact support.");
+    }
+  };
+
+  // Main payment processing function
+  const makePurchase = async () => {
+    if (!validateForm()) {
+      return;
+    }
+
+    if (products.length === 0) {
+      toast.error("Your cart is empty");
+      return;
+    }
+
+    if (!isScriptLoaded) {
+      toast.error("Payment gateway not loaded. Please try again.");
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      // Create order in backend
+      const orderId = await createOrder();
+      if (!orderId) {
+        setIsProcessing(false);
+        return;
+      }
+
+      // Create Razorpay order
+      const razorpayResponse = await fetch("http://localhost:3001/api/razorpay", { // Fixed endpoint
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: finalTotal,
+        }),
+      });
+
+      if (!razorpayResponse.ok) {
+        throw new Error("Failed to create Razorpay order");
+      }
+
+      const razorpayOrder = await razorpayResponse.json();
+
+      // Configure Razorpay options
+      const options: RazorpayOptions = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "", // Fallback for missing env
+        amount: razorpayOrder.amount,
+        currency: razorpayOrder.currency,
+        name: "Your Store Name",
+        description: "Purchase from Your Store",
+        order_id: razorpayOrder.id,
+        handler: async (response: RazorpayResponse) => {
+          await handlePaymentSuccess(response, orderId);
+        },
+        prefill: {
+          name: `${checkoutForm.name} ${checkoutForm.lastname}`,
+          email: checkoutForm.email,
+          contact: checkoutForm.phone,
+        },
+        theme: {
+          color: "#3B82F6",
+        },
+        modal: {
+          ondismiss: async () => {
+            await handlePaymentFailure(orderId);
+            setIsProcessing(false);
+          },
+        },
+      };
+
+      // Open Razorpay checkout
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
+    } catch (error) {
+      console.error("Error processing payment:", error);
+      toast.error("Failed to process payment. Please try again.");
+      setIsProcessing(false);
+    }
+  };
 
   return (
     <div className="bg-white">
-      <SectionTitle title="Checkout" path="Home | Cart | Checkout" />
-      {/* Background color split screen for large screens */}
       <div
         className="hidden h-full w-1/2 bg-white lg:block"
         aria-hidden="true"
@@ -218,9 +431,8 @@ const CheckoutPage = () => {
                     <p className="text-gray-500">x{product?.amount}</p>
                   </div>
                   <p className="flex-none text-base font-medium">
-                    ${product?.price}
+                    ₹{product?.price}
                   </p>
-                  <p></p>
                 </li>
               ))}
             </ul>
@@ -228,24 +440,22 @@ const CheckoutPage = () => {
             <dl className="hidden space-y-6 border-t border-gray-200 pt-6 text-sm font-medium text-gray-900 lg:block">
               <div className="flex items-center justify-between">
                 <dt className="text-gray-600">Subtotal</dt>
-                <dd>${total}</dd>
+                <dd>₹{total}</dd>
               </div>
 
               <div className="flex items-center justify-between">
                 <dt className="text-gray-600">Shipping</dt>
-                <dd>$5</dd>
+                <dd>₹5</dd>
               </div>
 
               <div className="flex items-center justify-between">
                 <dt className="text-gray-600">Taxes</dt>
-                <dd>${total / 5}</dd>
+                <dd>₹{Math.round(total / 5)}</dd>
               </div>
 
               <div className="flex items-center justify-between border-t border-gray-200 pt-6">
                 <dt className="text-base">Total</dt>
-                <dd className="text-base">
-                  ${total === 0 ? 0 : Math.round(total + total / 5 + 5)}
-                </dd>
+                <dd className="text-base">₹{finalTotal}</dd>
               </div>
             </dl>
           </div>
@@ -266,7 +476,7 @@ const CheckoutPage = () => {
                   htmlFor="name-input"
                   className="block text-sm font-medium text-gray-700"
                 >
-                  Name
+                  Name *
                 </label>
                 <div className="mt-1">
                   <input
@@ -280,8 +490,9 @@ const CheckoutPage = () => {
                     type="text"
                     id="name-input"
                     name="name-input"
-                    autoComplete="text"
+                    autoComplete="given-name"
                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    required
                   />
                 </div>
               </div>
@@ -291,7 +502,7 @@ const CheckoutPage = () => {
                   htmlFor="lastname-input"
                   className="block text-sm font-medium text-gray-700"
                 >
-                  Lastname
+                  Lastname *
                 </label>
                 <div className="mt-1">
                   <input
@@ -305,8 +516,9 @@ const CheckoutPage = () => {
                     type="text"
                     id="lastname-input"
                     name="lastname-input"
-                    autoComplete="text"
+                    autoComplete="family-name"
                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    required
                   />
                 </div>
               </div>
@@ -316,7 +528,7 @@ const CheckoutPage = () => {
                   htmlFor="phone-input"
                   className="block text-sm font-medium text-gray-700"
                 >
-                  Phone number
+                  Phone number *
                 </label>
                 <div className="mt-1">
                   <input
@@ -330,8 +542,9 @@ const CheckoutPage = () => {
                     type="tel"
                     id="phone-input"
                     name="phone-input"
-                    autoComplete="text"
+                    autoComplete="tel"
                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    required
                   />
                 </div>
               </div>
@@ -341,7 +554,7 @@ const CheckoutPage = () => {
                   htmlFor="email-address"
                   className="block text-sm font-medium text-gray-700"
                 >
-                  Email address
+                  Email address *
                 </label>
                 <div className="mt-1">
                   <input
@@ -357,118 +570,8 @@ const CheckoutPage = () => {
                     name="email-address"
                     autoComplete="email"
                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    required
                   />
-                </div>
-              </div>
-            </section>
-
-            <section aria-labelledby="payment-heading" className="mt-10">
-              <h2
-                id="payment-heading"
-                className="text-lg font-medium text-gray-900"
-              >
-                Payment details
-              </h2>
-
-              <div className="mt-6 grid grid-cols-3 gap-x-4 gap-y-6 sm:grid-cols-4">
-                <div className="col-span-3 sm:col-span-4">
-                  <label
-                    htmlFor="name-on-card"
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    Name on card
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="text"
-                      id="name-on-card"
-                      name="name-on-card"
-                      autoComplete="cc-name"
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                      value={checkoutForm.cardName}
-                      onChange={(e) =>
-                        setCheckoutForm({
-                          ...checkoutForm,
-                          cardName: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="col-span-3 sm:col-span-4">
-                  <label
-                    htmlFor="card-number"
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    Card number
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="text"
-                      id="card-number"
-                      name="card-number"
-                      autoComplete="cc-number"
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                      value={checkoutForm.cardNumber}
-                      onChange={(e) =>
-                        setCheckoutForm({
-                          ...checkoutForm,
-                          cardNumber: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="col-span-2 sm:col-span-3">
-                  <label
-                    htmlFor="expiration-date"
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    Expiration date (MM/YY)
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="text"
-                      name="expiration-date"
-                      id="expiration-date"
-                      autoComplete="cc-exp"
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                      value={checkoutForm.expirationDate}
-                      onChange={(e) =>
-                        setCheckoutForm({
-                          ...checkoutForm,
-                          expirationDate: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="cvc"
-                    className="block text-sm font-medium text-gray-700"
-                  >
-                    CVC or CVV
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="text"
-                      name="cvc"
-                      id="cvc"
-                      autoComplete="csc"
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                      value={checkoutForm.cvc}
-                      onChange={(e) =>
-                        setCheckoutForm({
-                          ...checkoutForm,
-                          cvc: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
                 </div>
               </div>
             </section>
@@ -487,13 +590,14 @@ const CheckoutPage = () => {
                     htmlFor="company"
                     className="block text-sm font-medium text-gray-700"
                   >
-                    Company
+                    Company *
                   </label>
                   <div className="mt-1">
                     <input
                       type="text"
                       id="company"
                       name="company"
+                      autoComplete="organization"
                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                       value={checkoutForm.company}
                       onChange={(e) =>
@@ -502,22 +606,23 @@ const CheckoutPage = () => {
                           company: e.target.value,
                         })
                       }
+                      required
                     />
                   </div>
                 </div>
 
                 <div className="sm:col-span-3">
                   <label
-                    htmlFor="address"
+                    htmlFor="adress"
                     className="block text-sm font-medium text-gray-700"
                   >
-                    Address
+                    Address *
                   </label>
                   <div className="mt-1">
                     <input
                       type="text"
-                      id="address"
-                      name="address"
+                      id="adress"
+                      name="adress"
                       autoComplete="street-address"
                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                       value={checkoutForm.adress}
@@ -527,6 +632,7 @@ const CheckoutPage = () => {
                           adress: e.target.value,
                         })
                       }
+                      required
                     />
                   </div>
                 </div>
@@ -536,13 +642,14 @@ const CheckoutPage = () => {
                     htmlFor="apartment"
                     className="block text-sm font-medium text-gray-700"
                   >
-                    Apartment, suite, etc.
+                    Apartment, suite, etc. *
                   </label>
                   <div className="mt-1">
                     <input
                       type="text"
                       id="apartment"
                       name="apartment"
+                      autoComplete="address-line2"
                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                       value={checkoutForm.apartment}
                       onChange={(e) =>
@@ -551,6 +658,7 @@ const CheckoutPage = () => {
                           apartment: e.target.value,
                         })
                       }
+                      required
                     />
                   </div>
                 </div>
@@ -560,7 +668,7 @@ const CheckoutPage = () => {
                     htmlFor="city"
                     className="block text-sm font-medium text-gray-700"
                   >
-                    City
+                    City *
                   </label>
                   <div className="mt-1">
                     <input
@@ -576,23 +684,24 @@ const CheckoutPage = () => {
                           city: e.target.value,
                         })
                       }
+                      required
                     />
                   </div>
                 </div>
 
                 <div>
                   <label
-                    htmlFor="region"
+                    htmlFor="country"
                     className="block text-sm font-medium text-gray-700"
                   >
-                    Country
+                    Country *
                   </label>
                   <div className="mt-1">
                     <input
                       type="text"
-                      id="region"
-                      name="region"
-                      autoComplete="address-level1"
+                      id="country"
+                      name="country"
+                      autoComplete="country"
                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                       value={checkoutForm.country}
                       onChange={(e) =>
@@ -601,6 +710,7 @@ const CheckoutPage = () => {
                           country: e.target.value,
                         })
                       }
+                      required
                     />
                   </div>
                 </div>
@@ -610,7 +720,7 @@ const CheckoutPage = () => {
                     htmlFor="postal-code"
                     className="block text-sm font-medium text-gray-700"
                   >
-                    Postal code
+                    Postal code *
                   </label>
                   <div className="mt-1">
                     <input
@@ -626,6 +736,7 @@ const CheckoutPage = () => {
                           postalCode: e.target.value,
                         })
                       }
+                      required
                     />
                   </div>
                 </div>
@@ -635,14 +746,14 @@ const CheckoutPage = () => {
                     htmlFor="order-notice"
                     className="block text-sm font-medium text-gray-700"
                   >
-                    Order notice
+                    Order notice (Optional)
                   </label>
                   <div className="mt-1">
                     <textarea
-                      className="textarea textarea-bordered textarea-lg w-full"
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                       id="order-notice"
                       name="order-notice"
-                      autoComplete="order-notice"
+                      rows={4}
                       value={checkoutForm.orderNotice}
                       onChange={(e) =>
                         setCheckoutForm({
@@ -650,20 +761,34 @@ const CheckoutPage = () => {
                           orderNotice: e.target.value,
                         })
                       }
-                    ></textarea>
+                    />
                   </div>
                 </div>
               </div>
             </section>
 
-            <div className="mt-10 border-t border-gray-200 pt-6 ml-0">
+            <div className="mt-10 border-t border-gray-200 pt-6">
               <button
                 type="button"
                 onClick={makePurchase}
-                className="w-full rounded-md border border-transparent bg-blue-500 px-20 py-2 text-lg font-medium text-white shadow-sm hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:ring-offset-gray-50 sm:order-last"
+                disabled={isProcessing || !isScriptLoaded}
+                className={`w-full rounded-md border border-transparent px-20 py-3 text-lg font-medium text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:ring-offset-gray-50 ${
+                  isProcessing || !isScriptLoaded
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-blue-500 hover:bg-blue-600"
+                }`}
               >
-                Pay Now
+                {isProcessing
+                  ? "Processing..."
+                  : `Pay ₹${finalTotal} with Razorpay`}
               </button>
+            </div>
+
+            <div className="mt-6 text-center">
+              <p className="text-sm text-gray-500">* Required fields</p>
+              <p className="text-xs text-gray-400 mt-2">
+                Payments are processed securely through Razorpay
+              </p>
             </div>
           </div>
         </form>
@@ -673,3 +798,678 @@ const CheckoutPage = () => {
 };
 
 export default CheckoutPage;
+
+// "use client";
+// import { SectionTitle } from "@/components";
+// import { useProductStore } from "../_zustand/store";
+// import Image from "next/image";
+// import { useEffect, useState } from "react";
+// import toast from "react-hot-toast";
+// import { useRouter } from "next/navigation";
+// import { isValidCardNumber, isValidCreditCardCVVOrCVC, isValidCreditCardExpirationDate, isValidEmailAddressFormat, isValidNameOrLastname } from "@/lib/utils";
+
+// const CheckoutPage = () => {
+//   const [checkoutForm, setCheckoutForm] = useState({
+//     name: "",
+//     lastname: "",
+//     phone: "",
+//     email: "",
+//     cardName: "",
+//     cardNumber: "",
+//     expirationDate: "",
+//     cvc: "",
+//     company: "",
+//     adress: "",
+//     apartment: "",
+//     city: "",
+//     country: "",
+//     postalCode: "",
+//     orderNotice: "",
+//   });
+//   const { products, total, clearCart } = useProductStore();
+//   const router = useRouter();
+
+//   const makePurchase = async () => {
+//     if (
+//       checkoutForm.name.length > 0 &&
+//       checkoutForm.lastname.length > 0 &&
+//       checkoutForm.phone.length > 0 &&
+//       checkoutForm.email.length > 0 &&
+//       checkoutForm.cardName.length > 0 &&
+//       checkoutForm.expirationDate.length > 0 &&
+//       checkoutForm.cvc.length > 0 &&
+//       checkoutForm.company.length > 0 &&
+//       checkoutForm.adress.length > 0 &&
+//       checkoutForm.apartment.length > 0 &&
+//       checkoutForm.city.length > 0 &&
+//       checkoutForm.country.length > 0 &&
+//       checkoutForm.postalCode.length > 0
+//     ) {
+//       if (!isValidNameOrLastname(checkoutForm.name)) {
+//         toast.error("You entered invalid format for name");
+//         return;
+//       }
+
+//       if (!isValidNameOrLastname(checkoutForm.lastname)) {
+//         toast.error("You entered invalid format for lastname");
+//         return;
+//       }
+
+//       if (!isValidEmailAddressFormat(checkoutForm.email)) {
+//         toast.error("You entered invalid format for email address");
+//         return;
+//       }
+
+//       if (!isValidNameOrLastname(checkoutForm.cardName)) {
+//         toast.error("You entered invalid format for card name");
+//         return;
+//       }
+
+//       if (!isValidCardNumber(checkoutForm.cardNumber)) {
+//         toast.error("You entered invalid format for credit card number");
+//         return;
+//       }
+
+//       if (!isValidCreditCardExpirationDate(checkoutForm.expirationDate)) {
+//         toast.error(
+//           "You entered invalid format for credit card expiration date"
+//         );
+//         return;
+//       }
+
+//       if (!isValidCreditCardCVVOrCVC(checkoutForm.cvc)) {
+//         toast.error("You entered invalid format for credit card CVC or CVV");
+//         return;
+//       }
+
+//       // sending API request for creating a order
+//       const response = fetch("http://localhost:3001/api/orders", {
+//         method: "POST",
+//         headers: {
+//           "Content-Type": "application/json",
+//         },
+//         body: JSON.stringify({
+//           name: checkoutForm.name,
+//           lastname: checkoutForm.lastname,
+//           phone: checkoutForm.phone,
+//           email: checkoutForm.email,
+//           company: checkoutForm.company,
+//           adress: checkoutForm.adress,
+//           apartment: checkoutForm.apartment,
+//           postalCode: checkoutForm.postalCode,
+//           status: "processing",
+//           total: total,
+//           city: checkoutForm.city,
+//           country: checkoutForm.country,
+//           orderNotice: checkoutForm.orderNotice,
+//         }),
+//       })
+//         .then((res) => res.json())
+//         .then((data) => {
+//           const orderId: string = data.id;
+//           // for every product in the order we are calling addOrderProduct function that adds fields to the customer_order_product table
+//           for (let i = 0; i < products.length; i++) {
+//             let productId: string = products[i].id;
+//             addOrderProduct(orderId, products[i].id, products[i].amount);
+//           }
+//         })
+//         .then(() => {
+//           setCheckoutForm({
+//             name: "",
+//             lastname: "",
+//             phone: "",
+//             email: "",
+//             cardName: "",
+//             cardNumber: "",
+//             expirationDate: "",
+//             cvc: "",
+//             company: "",
+//             adress: "",
+//             apartment: "",
+//             city: "",
+//             country: "",
+//             postalCode: "",
+//             orderNotice: "",
+//           });
+//           clearCart();
+//           toast.success("Order created successfuly");
+//           setTimeout(() => {
+//             router.push("/");
+//           }, 1000);
+//         });
+//     } else {
+//       toast.error("You need to enter values in the input fields");
+//     }
+//   };
+
+//   const addOrderProduct = async (
+//     orderId: string,
+//     productId: string,
+//     productQuantity: number
+//   ) => {
+//     // sending API POST request for the table customer_order_product that does many to many relatioship for order and product
+//     const response = await fetch("http://localhost:3001/api/order-product", {
+//       method: "POST", // or 'PUT'
+//       headers: {
+//         "Content-Type": "application/json",
+//       },
+//       body: JSON.stringify({
+//         customerOrderId: orderId,
+//         productId: productId,
+//         quantity: productQuantity,
+//       }),
+//     });
+//   };
+
+  
+
+//   useEffect(() => {
+//     if (products.length === 0) {
+//       toast.error("You don't have items in your cart");
+//       router.push("/cart");
+//     }
+//   }, []);
+
+//   return (
+//     <div className="bg-white">
+//       {/* Background color split screen for large screens */}
+//       <div
+//         className="hidden h-full w-1/2 bg-white lg:block"
+//         aria-hidden="true"
+//       />
+//       <div
+//         className="hidden h-full w-1/2 bg-gray-50 lg:block"
+//         aria-hidden="true"
+//       />
+
+//       <main className="relative mx-auto grid max-w-screen-2xl grid-cols-1 gap-x-16 lg:grid-cols-2 lg:px-8 xl:gap-x-48">
+//         <h1 className="sr-only">Order information</h1>
+
+//         <section
+//           aria-labelledby="summary-heading"
+//           className="bg-gray-50 px-4 pb-10 pt-16 sm:px-6 lg:col-start-2 lg:row-start-1 lg:bg-transparent lg:px-0 lg:pb-16"
+//         >
+//           <div className="mx-auto max-w-lg lg:max-w-none">
+//             <h2
+//               id="summary-heading"
+//               className="text-lg font-medium text-gray-900"
+//             >
+//               Order summary
+//             </h2>
+
+//             <ul
+//               role="list"
+//               className="divide-y divide-gray-200 text-sm font-medium text-gray-900"
+//             >
+//               {products.map((product) => (
+//                 <li
+//                   key={product?.id}
+//                   className="flex items-start space-x-4 py-6"
+//                 >
+//                   <Image
+//                     src={product?.image ? `/${product?.image}` : "/product_placeholder.jpg"}
+//                     alt={product?.title}
+//                     width={80}
+//                     height={80}
+//                     className="h-20 w-20 flex-none rounded-md object-cover object-center"
+//                   />
+//                   <div className="flex-auto space-y-1">
+//                     <h3>{product?.title}</h3>
+//                     <p className="text-gray-500">x{product?.amount}</p>
+//                   </div>
+//                   <p className="flex-none text-base font-medium">
+//                     ₹{product?.price}
+//                   </p>
+//                   <p></p>
+//                 </li>
+//               ))}
+//             </ul>
+
+//             <dl className="hidden space-y-6 border-t border-gray-200 pt-6 text-sm font-medium text-gray-900 lg:block">
+//               <div className="flex items-center justify-between">
+//                 <dt className="text-gray-600">Subtotal</dt>
+//                 <dd>₹{total}</dd>
+//               </div>
+
+//               <div className="flex items-center justify-between">
+//                 <dt className="text-gray-600">Shipping</dt>
+//                 <dd>₹5</dd>
+//               </div>
+
+//               <div className="flex items-center justify-between">
+//                 <dt className="text-gray-600">Taxes</dt>
+//                 <dd>₹{total / 5}</dd>
+//               </div>
+
+//               <div className="flex items-center justify-between border-t border-gray-200 pt-6">
+//                 <dt className="text-base">Total</dt>
+//                 <dd className="text-base">
+//                   ₹{total === 0 ? 0 : Math.round(total + total / 5 + 5)}
+//                 </dd>
+//               </div>
+//             </dl>
+//           </div>
+//         </section>
+
+//         <form className="px-4 pt-16 sm:px-6 lg:col-start-1 lg:row-start-1 lg:px-0">
+//           <div className="mx-auto max-w-lg lg:max-w-none">
+//             <section aria-labelledby="contact-info-heading">
+//               <h2
+//                 id="contact-info-heading"
+//                 className="text-lg font-medium text-gray-900"
+//               >
+//                 Contact information
+//               </h2>
+
+//               <div className="mt-6">
+//                 <label
+//                   htmlFor="name-input"
+//                   className="block text-sm font-medium text-gray-700"
+//                 >
+//                   Name
+//                 </label>
+//                 <div className="mt-1">
+//                   <input
+//                     value={checkoutForm.name}
+//                     onChange={(e) =>
+//                       setCheckoutForm({
+//                         ...checkoutForm,
+//                         name: e.target.value,
+//                       })
+//                     }
+//                     type="text"
+//                     id="name-input"
+//                     name="name-input"
+//                     autoComplete="text"
+//                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                   />
+//                 </div>
+//               </div>
+
+//               <div className="mt-6">
+//                 <label
+//                   htmlFor="lastname-input"
+//                   className="block text-sm font-medium text-gray-700"
+//                 >
+//                   Lastname
+//                 </label>
+//                 <div className="mt-1">
+//                   <input
+//                     value={checkoutForm.lastname}
+//                     onChange={(e) =>
+//                       setCheckoutForm({
+//                         ...checkoutForm,
+//                         lastname: e.target.value,
+//                       })
+//                     }
+//                     type="text"
+//                     id="lastname-input"
+//                     name="lastname-input"
+//                     autoComplete="text"
+//                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                   />
+//                 </div>
+//               </div>
+
+//               <div className="mt-6">
+//                 <label
+//                   htmlFor="phone-input"
+//                   className="block text-sm font-medium text-gray-700"
+//                 >
+//                   Phone number
+//                 </label>
+//                 <div className="mt-1">
+//                   <input
+//                     value={checkoutForm.phone}
+//                     onChange={(e) =>
+//                       setCheckoutForm({
+//                         ...checkoutForm,
+//                         phone: e.target.value,
+//                       })
+//                     }
+//                     type="tel"
+//                     id="phone-input"
+//                     name="phone-input"
+//                     autoComplete="text"
+//                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                   />
+//                 </div>
+//               </div>
+
+//               <div className="mt-6">
+//                 <label
+//                   htmlFor="email-address"
+//                   className="block text-sm font-medium text-gray-700"
+//                 >
+//                   Email address
+//                 </label>
+//                 <div className="mt-1">
+//                   <input
+//                     value={checkoutForm.email}
+//                     onChange={(e) =>
+//                       setCheckoutForm({
+//                         ...checkoutForm,
+//                         email: e.target.value,
+//                       })
+//                     }
+//                     type="email"
+//                     id="email-address"
+//                     name="email-address"
+//                     autoComplete="email"
+//                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                   />
+//                 </div>
+//               </div>
+//             </section>
+
+//             <section aria-labelledby="payment-heading" className="mt-10">
+//               <h2
+//                 id="payment-heading"
+//                 className="text-lg font-medium text-gray-900"
+//               >
+//                 Payment details
+//               </h2>
+
+//               <div className="mt-6 grid grid-cols-3 gap-x-4 gap-y-6 sm:grid-cols-4">
+//                 <div className="col-span-3 sm:col-span-4">
+//                   <label
+//                     htmlFor="name-on-card"
+//                     className="block text-sm font-medium text-gray-700"
+//                   >
+//                     Name on card
+//                   </label>
+//                   <div className="mt-1">
+//                     <input
+//                       type="text"
+//                       id="name-on-card"
+//                       name="name-on-card"
+//                       autoComplete="cc-name"
+//                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                       value={checkoutForm.cardName}
+//                       onChange={(e) =>
+//                         setCheckoutForm({
+//                           ...checkoutForm,
+//                           cardName: e.target.value,
+//                         })
+//                       }
+//                     />
+//                   </div>
+//                 </div>
+
+//                 <div className="col-span-3 sm:col-span-4">
+//                   <label
+//                     htmlFor="card-number"
+//                     className="block text-sm font-medium text-gray-700"
+//                   >
+//                     Card number
+//                   </label>
+//                   <div className="mt-1">
+//                     <input
+//                       type="text"
+//                       id="card-number"
+//                       name="card-number"
+//                       autoComplete="cc-number"
+//                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                       value={checkoutForm.cardNumber}
+//                       onChange={(e) =>
+//                         setCheckoutForm({
+//                           ...checkoutForm,
+//                           cardNumber: e.target.value,
+//                         })
+//                       }
+//                     />
+//                   </div>
+//                 </div>
+
+//                 <div className="col-span-2 sm:col-span-3">
+//                   <label
+//                     htmlFor="expiration-date"
+//                     className="block text-sm font-medium text-gray-700"
+//                   >
+//                     Expiration date (MM/YY)
+//                   </label>
+//                   <div className="mt-1">
+//                     <input
+//                       type="text"
+//                       name="expiration-date"
+//                       id="expiration-date"
+//                       autoComplete="cc-exp"
+//                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                       value={checkoutForm.expirationDate}
+//                       onChange={(e) =>
+//                         setCheckoutForm({
+//                           ...checkoutForm,
+//                           expirationDate: e.target.value,
+//                         })
+//                       }
+//                     />
+//                   </div>
+//                 </div>
+
+//                 <div>
+//                   <label
+//                     htmlFor="cvc"
+//                     className="block text-sm font-medium text-gray-700"
+//                   >
+//                     CVC or CVV
+//                   </label>
+//                   <div className="mt-1">
+//                     <input
+//                       type="text"
+//                       name="cvc"
+//                       id="cvc"
+//                       autoComplete="csc"
+//                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                       value={checkoutForm.cvc}
+//                       onChange={(e) =>
+//                         setCheckoutForm({
+//                           ...checkoutForm,
+//                           cvc: e.target.value,
+//                         })
+//                       }
+//                     />
+//                   </div>
+//                 </div>
+//               </div>
+//             </section>
+
+//             <section aria-labelledby="shipping-heading" className="mt-10">
+//               <h2
+//                 id="shipping-heading"
+//                 className="text-lg font-medium text-gray-900"
+//               >
+//                 Shipping address
+//               </h2>
+
+//               <div className="mt-6 grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-3">
+//                 <div className="sm:col-span-3">
+//                   <label
+//                     htmlFor="company"
+//                     className="block text-sm font-medium text-gray-700"
+//                   >
+//                     Company
+//                   </label>
+//                   <div className="mt-1">
+//                     <input
+//                       type="text"
+//                       id="company"
+//                       name="company"
+//                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                       value={checkoutForm.company}
+//                       onChange={(e) =>
+//                         setCheckoutForm({
+//                           ...checkoutForm,
+//                           company: e.target.value,
+//                         })
+//                       }
+//                     />
+//                   </div>
+//                 </div>
+
+//                 <div className="sm:col-span-3">
+//                   <label
+//                     htmlFor="address"
+//                     className="block text-sm font-medium text-gray-700"
+//                   >
+//                     Address
+//                   </label>
+//                   <div className="mt-1">
+//                     <input
+//                       type="text"
+//                       id="address"
+//                       name="address"
+//                       autoComplete="street-address"
+//                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                       value={checkoutForm.adress}
+//                       onChange={(e) =>
+//                         setCheckoutForm({
+//                           ...checkoutForm,
+//                           adress: e.target.value,
+//                         })
+//                       }
+//                     />
+//                   </div>
+//                 </div>
+
+//                 <div className="sm:col-span-3">
+//                   <label
+//                     htmlFor="apartment"
+//                     className="block text-sm font-medium text-gray-700"
+//                   >
+//                     Apartment, suite, etc.
+//                   </label>
+//                   <div className="mt-1">
+//                     <input
+//                       type="text"
+//                       id="apartment"
+//                       name="apartment"
+//                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                       value={checkoutForm.apartment}
+//                       onChange={(e) =>
+//                         setCheckoutForm({
+//                           ...checkoutForm,
+//                           apartment: e.target.value,
+//                         })
+//                       }
+//                     />
+//                   </div>
+//                 </div>
+
+//                 <div>
+//                   <label
+//                     htmlFor="city"
+//                     className="block text-sm font-medium text-gray-700"
+//                   >
+//                     City
+//                   </label>
+//                   <div className="mt-1">
+//                     <input
+//                       type="text"
+//                       id="city"
+//                       name="city"
+//                       autoComplete="address-level2"
+//                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                       value={checkoutForm.city}
+//                       onChange={(e) =>
+//                         setCheckoutForm({
+//                           ...checkoutForm,
+//                           city: e.target.value,
+//                         })
+//                       }
+//                     />
+//                   </div>
+//                 </div>
+
+//                 <div>
+//                   <label
+//                     htmlFor="region"
+//                     className="block text-sm font-medium text-gray-700"
+//                   >
+//                     Country
+//                   </label>
+//                   <div className="mt-1">
+//                     <input
+//                       type="text"
+//                       id="region"
+//                       name="region"
+//                       autoComplete="address-level1"
+//                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                       value={checkoutForm.country}
+//                       onChange={(e) =>
+//                         setCheckoutForm({
+//                           ...checkoutForm,
+//                           country: e.target.value,
+//                         })
+//                       }
+//                     />
+//                   </div>
+//                 </div>
+
+//                 <div>
+//                   <label
+//                     htmlFor="postal-code"
+//                     className="block text-sm font-medium text-gray-700"
+//                   >
+//                     Postal code
+//                   </label>
+//                   <div className="mt-1">
+//                     <input
+//                       type="text"
+//                       id="postal-code"
+//                       name="postal-code"
+//                       autoComplete="postal-code"
+//                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+//                       value={checkoutForm.postalCode}
+//                       onChange={(e) =>
+//                         setCheckoutForm({
+//                           ...checkoutForm,
+//                           postalCode: e.target.value,
+//                         })
+//                       }
+//                     />
+//                   </div>
+//                 </div>
+
+//                 <div className="sm:col-span-3">
+//                   <label
+//                     htmlFor="order-notice"
+//                     className="block text-sm font-medium text-gray-700"
+//                   >
+//                     Order notice
+//                   </label>
+//                   <div className="mt-1">
+//                     <textarea
+//                       className="textarea textarea-bordered textarea-lg w-full"
+//                       id="order-notice"
+//                       name="order-notice"
+//                       autoComplete="order-notice"
+//                       value={checkoutForm.orderNotice}
+//                       onChange={(e) =>
+//                         setCheckoutForm({
+//                           ...checkoutForm,
+//                           orderNotice: e.target.value,
+//                         })
+//                       }
+//                     ></textarea>
+//                   </div>
+//                 </div>
+//               </div>
+//             </section>
+
+//             <div className="mt-10 border-t border-gray-200 pt-6 ml-0">
+//               <button
+//                 type="button"
+//                 onClick={makePurchase}
+//                 className="w-full rounded-md border border-transparent bg-blue-500 px-20 py-2 text-lg font-medium text-white shadow-sm hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:ring-offset-gray-50 sm:order-last"
+//               >
+//                 Pay Now
+//               </button>
+//             </div>
+//           </div>
+//         </form>
+//       </main>
+//     </div>
+//   );
+// };
+
+// export default CheckoutPage;

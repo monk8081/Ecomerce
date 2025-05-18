@@ -109,3 +109,13 @@ export const isValidCreditCardCVVOrCVC = (input: string) => {
   const regex = /^[0-9]{3,4}$/;
   return regex.test(input);
 };
+
+
+
+export const isValidPhoneNumber = (phone: string): boolean => {
+  return /^\+?[1-9]\d{1,14}$/.test(phone.trim()); // E.164 format or simple digits
+};
+
+export const isValidPostalCode = (postalCode: string): boolean => {
+  return /^[0-9]{5,10}$/.test(postalCode.trim()); // Basic postal code validation
+};
