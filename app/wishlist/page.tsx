@@ -83,7 +83,7 @@ const WishlistPage = () => {
                       {item.title}
                     </h3>
                     <p className="text-gray-600 font-medium mb-2">
-                      ${item.price}
+                      ₹{item.price}
                     </p>
                     <p
                       className={`text-sm font-medium ${
