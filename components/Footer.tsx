@@ -11,6 +11,7 @@
 import { navigation } from "@/lib/utils";
 import Image from "next/image";
 import React from "react";
+import Link from "next/link";
 
 const Footer = () => {
   return (
@@ -37,12 +38,12 @@ const Footer = () => {
                   <ul role="list" className="mt-6 space-y-4">
                     {navigation.sale.map((item) => (
                       <li key={item.name}>
-                        <a
+                        <Link
                           href={item.href}
                           className="text-sm leading-6 text-black hover:text-gray-700"
                         >
                           {item.name}
-                        </a>
+                        </Link>
                       </li>
                     ))}
                   </ul>
