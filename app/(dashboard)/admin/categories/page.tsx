@@ -78,15 +78,7 @@ const DashboardCategory = () => {
                     </th>
                   </tr>
                 ))}
-            </tbody>
-            {/* foot */}
-            <tfoot>
-              <tr>
-                <th></th>
-                <th>Name</th>
-                <th></th>
-              </tr>
-            </tfoot>
+            </tbody>           
           </table>
         </div>
       </div>

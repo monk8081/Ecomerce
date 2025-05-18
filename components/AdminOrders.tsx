@@ -79,7 +79,7 @@ const AdminOrders = () => {
                   </td>
 
                   <td>
-                    <p>${order?.total}</p>
+                    <p>₹{order?.total}</p>
                   </td>
 
                   <td>{ new Date(Date.parse(order?.dateTime)).toDateString() }</td>
@@ -93,19 +93,7 @@ const AdminOrders = () => {
                   </th>
                 </tr>
               ))}
-          </tbody>
-          {/* foot */}
-          <tfoot>
-            <tr>
-              <th></th>
-              <th>Order ID</th>
-              <th>Name and country</th>
-              <th>Status</th>
-              <th>Subtotal</th>
-              <th>Date</th>
-              <th></th>
-            </tr>
-          </tfoot>
+          </tbody>          
         </table>
       </div>
     </div>

@@ -80,15 +80,7 @@ const DashboardUsers = () => {
                   </tr>
                 ))}
             </tbody>
-            {/* foot */}
-            <tfoot>
-              <tr>
-                <th></th>
-                <th>Email</th>
-                <th>Role</th>
-                <th></th>
-              </tr>
-            </tfoot>
+            
           </table>
         </div>
       </div>

@@ -148,7 +148,7 @@ const DashboardSingleUserPage = ({
                 setUserInput({ ...userInput, role: e.target.value })
               }
             >
-              <option value="admin">admin</option>
+              {/* <option value="admin">admin</option> */}
               <option value="user">user</option>
             </select>
           </label>
