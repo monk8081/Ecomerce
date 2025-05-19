@@ -34,6 +34,19 @@ export default async function RootLayout({
         </Providers>
         <Footer />
       </SessionProvider>
+       {/* WhatsApp Floating Icon */}
+        <a
+          href="https://wa.me/919695441766" // Replace with your number
+          target="_blank"
+          rel="noopener noreferrer"
+          className="whatsapp-float"
+        >
+          <img
+            src="/icons8-whatsapp.gif" // Place the icon in public folder
+            alt="WhatsApp"
+            className="w-10 h-10"
+          />
+        </a>
         </body>
     </html>
   );

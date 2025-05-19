@@ -1,12 +1,3 @@
-// *********************
-// Role of the component: Topbar of the header
-// Name of the component: HeaderTop.tsx
-// Developer: Aleksandar Kuzmanovic
-// Version: 1.0
-// Component call: <HeaderTop />
-// Input parameters: no input parameters
-// Output: topbar with phone, email and login and register links
-// *********************
 
 "use client";
 import { signOut, useSession } from "next-auth/react";
@@ -55,13 +46,18 @@ const HeaderTop = () => {
           </li>
           </>
           ) :  (<>
-          <span className="ml-10 text-base">{session.user?.email}</span>
+          <span className="ml-10 text-base">{session.user?.email}</span>          
           <li className="flex items-center">
             <button onClick={() => handleLogout()} className="flex items-center gap-x-2 font-semibold">
               <FaRegUser className="text-white" />
               <span>Log out</span>
             </button>
           </li>
+          {session.user?.role === "admin" && (
+            <li className="">
+              <a href="/admin">admin</a>
+            </li>
+          )}
           </>)}
         </ul>
       </div>
